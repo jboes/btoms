@@ -31,11 +31,11 @@ def get_neb_trajectory(endpoint1, endpoint2=None, nimages=5):
             trajectory[i] = ase.io.read(image)
 
     images = [trajectory[0]]
-    for i in range(nimages):
+    for i in range(nimages - 2):
         images += [trajectory[0].copy()]
     images += [trajectory[-1]]
 
     neb = ase.neb.NEB(images)
-    neb.interpolate(method='idpp', mic=True)
+    neb.interpolate(method='idpp')
 
     return images

@@ -1,6 +1,7 @@
 import numpy as np
 import ase.neb
 import btoms
+import copy
 
 
 class Converged(Exception):
@@ -12,19 +13,27 @@ class NEB():
 
     Parameters
     ----------
-    trajectory: list of Atoms objects
-        Initial end-point of the NEB path or Atoms object.
-    calculator: Calculator object
-        ASE calculator as implemented in ASE.
-        See https://wiki.fysik.dtu.dk/ase/ase/calculators/calculators.html
+    trajectory : list of Atoms objects
+        The NEB trajectory to optimize.
+    calculator : Calculator object
+        ASE calculator.
+    kernel : Kernel object
+        Kernel to be used in the GP calculator btoms.kernel.
+    targets : list of Atoms objects | str
+        Previously trained atoms objects to use as training data.
     """
 
-    def __init__(self, trajectory, calculator=None):
+    def __init__(self, trajectory, calculator=None, kernel=None, targets=None):
         self.images = trajectory
-        self.targets = [trajectory[0], trajectory[-1]]
-        self.gaussian = btoms.GPCalculator()
+        self.gaussian = btoms.GPCalculator(kernel)
         self.calculator = calculator
         self.iteration = 0
+
+        if targets is None:
+            self.targets = [trajectory[0], trajectory[-1]]
+        elif isinstance(targets, str):
+            self.targets = ase.io.read(targets)
+        ase.io.write('targets.json', self.targets)
 
         tmp = np.empty(len(self.images) - 2)
         self.data = {'energy': tmp.copy(), 'sigma': tmp.copy()}
@@ -35,23 +44,29 @@ class NEB():
         Parameters
         ----------
         fmax : float
-            Convergence criteria (in eV/Angs).
-        umax: float
-            Maximum uncertainty for convergence (in eV).
+            Maximum absolute force component to consider saddle point
+            converged (eV/Angs).
+        umax : float | tuple of float (2,)
+            For all images, the maximum allowed GP standard deviation
+            be considered converged (eV). Also defines the maximum allowed
+            uncertainty before terminating a NEB relaxation early.
         steps : int
-            Maximum number of evaluations on the calculator.
+            Maximum number of calculator evaluations.
         gpsteps : int
-            Maximum number of iterations for the surrogate model.
+            Maximum number of iterations for GP directed NEB relaxation.
         """
         if len(self.targets) == 2:
             target = self.images[len(self.images) // 2]
-            atoms = self.evaluate_atoms(target, False)
+            atoms = self.evaluate_atoms(target)
             self.targets += [atoms]
+
+        initial_images = self.images
 
         saddle_found = False
         for i in range(steps):
             self.gaussian.fit_to_images(self.targets, optimize=True)
 
+            self.images = copy.deepcopy(initial_images)
             for image in self.images[1:-1]:
                 image.set_calculator(self.gaussian.copy())
 
@@ -62,10 +77,11 @@ class NEB():
                     climb=True,
                     method='improvedtangent')
                 opt = ase.optimize.MDMin(neb, dt=0.05, logfile=None)
-                opt.attach(self.check_convergence)
-                opt.run(fmax=fmax, steps=gpsteps)
+                opt.attach(self.check_convergence, 1, umax)
+                opt.run(fmax=fmax * 0.8, steps=gpsteps)
             except(Converged):
                 pass
+            ase.io.write('neb.json', self.images)
 
             # Acquisition function
             uncertainty_converged = self.data['sigma'].max() < umax
@@ -76,7 +92,7 @@ class NEB():
 
             # Evaluate a new target
             atoms = self.images[target]
-            atoms = self.evaluate_atoms(atoms, append=True)
+            atoms = self.evaluate_atoms(atoms)
             self.targets += [atoms]
 
             force_converged = np.abs(atoms.get_forces()).max() < fmax
@@ -84,10 +100,9 @@ class NEB():
                 saddle_found = True
 
                 if uncertainty_converged:
-                    ase.io.write('neb.json', self.images)
                     return True
 
-    def evaluate_atoms(self, atoms, append=True):
+    def evaluate_atoms(self, atoms):
         """Calculate the energy of a given structure with the
         provided ASE calculator.
         """
@@ -98,20 +113,17 @@ class NEB():
 
         self.iteration += 1
         print('Evaluation {}'.format(self.iteration))
-
-        if append is not None:
-            ase.io.write('evaluated.json', atoms, append=append)
-            ase.io.write('paths.json', self.images, append=append)
+        ase.io.write('targets.json', atoms, append=True)
 
         return atoms
 
-    def check_convergence(self):
+    def check_convergence(self, umax):
         """Return a convergence criteria for the surrogate model."""
         for i, atoms in enumerate(self.images[1:-1]):
             self.data['energy'][i] = atoms.get_potential_energy()
             self.data['sigma'][i] = atoms.calc.get_uncertainty()
 
-        unc = np.abs(self.data['sigma']).max()
+        sigma = self.data['sigma']
 
-        if unc > 0.2:
+        if sigma.max() > 2 * umax:
             raise Converged

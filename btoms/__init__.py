@@ -2,7 +2,7 @@
 # (see accompanying license files for details).
 """Bayesian Optimization for atoms."""
 
-from .bopt import NEB
+from .opt import NEB
 from .gp import GPCalculator, GaussianProcess
 from .kernel import GRBF, GConstant, GWhiteNoise
 from . import utils

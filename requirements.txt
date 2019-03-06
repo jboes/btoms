@@ -1,0 +1,4 @@
+ase>=3.17.0
+numpy>=1.14
+scipy>=0.1
+sklearn

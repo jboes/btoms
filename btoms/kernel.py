@@ -184,7 +184,7 @@ class GConstant(sklearn.gaussian_process.kernels.ConstantKernel):
             if not eval_gradient:
                 return K
 
-            elif not self.hyperparameter_noise_level.fixed:
+            elif not self.hyperparameter_constant_value.fixed:
                 K_gradient = K[:, :, None]
             else:
                 K_gradient = np.empty((D, D, 0))
