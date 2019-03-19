@@ -112,7 +112,7 @@ class GaussianProcess():
         Y : ndarray (D,)
             The position at which the prediction is computed.
         covariance : bool
-           Whether to return the convenience matrix.
+            Whether to return the convenience matrix.
 
         Returns
         -------

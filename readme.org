@@ -11,7 +11,6 @@ Just the code for now. A very simple implementation of a modularly trainable GP 
 - GP algorithms are inspired by scikit-learn and gpmin in ASE.
 - NEB relaxation is inspired by Catlearn
 
-
 * NEB Example
 A very simple NEB example.
 
